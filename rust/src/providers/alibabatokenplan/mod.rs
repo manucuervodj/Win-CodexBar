@@ -58,6 +58,8 @@ pub(super) struct TokenPlanSnapshot {
     pub(super) weekly_used_percent: Option<f64>,
     pub(super) weekly_total_quota: Option<f64>,
     pub(super) weekly_resets_at: Option<DateTime<Utc>>,
+    pub(super) monthly_used_percent: Option<f64>,
+    pub(super) monthly_resets_at: Option<DateTime<Utc>>,
 }
 
 impl AlibabaTokenPlanProvider {
@@ -295,6 +297,8 @@ impl AlibabaTokenPlanProvider {
             weekly_used_percent: None,
             weekly_total_quota: None,
             weekly_resets_at: None,
+            monthly_used_percent: None,
+            monthly_resets_at: None,
         })
     }
 
@@ -334,21 +338,34 @@ impl AlibabaTokenPlanProvider {
                 quota_detail_percent(percent, snapshot.weekly_total_quota),
             )
         });
+        let monthly = snapshot.monthly_used_percent.map(|percent| {
+            RateWindow::with_details(
+                percent,
+                RateWindow::monthly_window_minutes(snapshot.monthly_resets_at)
+                    .or(Some(LEGACY_MINUTES)),
+                snapshot.monthly_resets_at,
+                quota_detail_percent(percent, None),
+            )
+        });
         // Prefer the 5-hour window, then the Team/legacy credit envelope. Personal/Solo
-        // payloads sometimes expose only `per1WeekPercentage`; promote that window to
-        // primary instead of failing the whole fetch.
-        let (primary, secondary) = match (five_hour.or(legacy), weekly) {
-            (Some(primary), secondary) => (primary, secondary),
-            (None, Some(weekly)) => (weekly, None),
-            (None, None) => {
-                return Err(ProviderError::Parse(
-                    "Alibaba Token Plan quota totals missing".into(),
-                ));
-            }
+        // plans expose a single lane depending on the subscription: some report only
+        // `per1WeekPercentage`, and intl-personal monthly plans report only
+        // `per1MonthPercentage`. Promote whichever lane exists into the free slot
+        // instead of failing the whole fetch.
+        let mut lanes = [five_hour.or(legacy), weekly, monthly]
+            .into_iter()
+            .flatten();
+        let Some(primary) = lanes.next() else {
+            return Err(ProviderError::Parse(
+                "Alibaba Token Plan quota totals missing".into(),
+            ));
         };
         let mut usage = UsageSnapshot::new(primary);
-        if let Some(secondary) = secondary {
+        if let Some(secondary) = lanes.next() {
             usage = usage.with_secondary(secondary);
+        }
+        if let Some(tertiary) = lanes.next() {
+            usage = usage.with_tertiary(tertiary);
         }
 
         if let Some(plan) = snapshot.plan_name.filter(|plan| !plan.trim().is_empty()) {

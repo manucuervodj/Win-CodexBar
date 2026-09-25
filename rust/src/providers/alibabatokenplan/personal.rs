@@ -20,6 +20,15 @@ struct PersonalApiContext<'a> {
     fetch_context: &'a FetchContext,
 }
 
+/// Usage window keys the Personal/Solo gateway can report. The exposed lane
+/// depends on the subscription: 5-hour plus weekly, weekly only, or — for
+/// intl-personal monthly plans — `per1MonthPercentage` only.
+const PERSONAL_WINDOW_KEYS: &[&str] = &[
+    "per5HourPercentage",
+    "per1WeekPercentage",
+    "per1MonthPercentage",
+];
+
 pub(super) async fn fetch_personal_usage(
     client: &reqwest::Client,
     cookie_header: &str,
@@ -59,6 +68,10 @@ pub(super) async fn fetch_personal_usage(
         ) {
             Ok(snapshot) => return Ok(snapshot),
             Err(error) if personal_usage_success_without_windows(&usage_body) => {
+                tracing::debug!(
+                    usage_keys = %response_key_summary(&usage_body),
+                    "Alibaba Token Plan Personal usage response shape"
+                );
                 tracing::info!(
                     attempt = attempt + 1,
                     max_attempts = MAX_USAGE_ATTEMPTS,
@@ -83,9 +96,7 @@ fn personal_usage_success_without_windows(data: &[u8]) -> bool {
         return false;
     };
     let expanded = expand_json_strings(value);
-    let has_windows =
-        find_object_containing_any_of(&expanded, &["per5HourPercentage", "per1WeekPercentage"])
-            .is_some();
+    let has_windows = find_object_containing_any_of(&expanded, PERSONAL_WINDOW_KEYS).is_some();
     if has_windows {
         return false;
     }
@@ -104,6 +115,43 @@ fn personal_usage_success_without_windows(data: &[u8]) -> bool {
         .map(str::trim)
         .is_none_or(str::is_empty);
     code_success && response_success && error_empty
+}
+
+/// Redacted shape of a JSON response: only key paths, never values. Used to
+/// attribute gateway response changes without exposing authenticated payloads.
+fn response_key_summary(data: &[u8]) -> String {
+    let Ok(value) = serde_json::from_slice::<Value>(data) else {
+        return "non-json".into();
+    };
+    let mut paths: Vec<String> = Vec::new();
+    fn walk(value: &Value, prefix: &str, paths: &mut Vec<String>, depth: usize) {
+        if depth > 3 {
+            return;
+        }
+        match value {
+            Value::Object(map) => {
+                for (key, nested) in map {
+                    let path = if prefix.is_empty() {
+                        key.clone()
+                    } else {
+                        format!("{prefix}.{key}")
+                    };
+                    paths.push(path.clone());
+                    walk(nested, &path, paths, depth + 1);
+                }
+            }
+            Value::Array(items) => {
+                for (index, nested) in items.iter().enumerate().take(3) {
+                    let path = format!("{prefix}[{index}]");
+                    paths.push(path.clone());
+                    walk(nested, &path, paths, depth + 1);
+                }
+            }
+            _ => {}
+        }
+    }
+    walk(&value, "", &mut paths, 0);
+    paths.join(",")
 }
 
 async fn post_personal_api(
@@ -265,14 +313,14 @@ pub(super) fn parse_personal_usage(
     throw_if_error_payload(&expanded)?;
 
     let usage =
-        find_object_containing_any_of(&expanded, &["per5HourPercentage", "per1WeekPercentage"])
-            .ok_or_else(|| {
-                ProviderError::Parse("Missing Alibaba Token Plan Personal usage windows".into())
-            })?;
+        find_object_containing_any_of(&expanded, PERSONAL_WINDOW_KEYS).ok_or_else(|| {
+            ProviderError::Parse("Missing Alibaba Token Plan Personal usage windows".into())
+        })?;
 
     let five_hour = percentage_points(number_field(&usage, "per5HourPercentage"));
     let weekly = percentage_points(number_field(&usage, "per1WeekPercentage"));
-    if five_hour.is_none() && weekly.is_none() {
+    let monthly = percentage_points(number_field(&usage, "per1MonthPercentage"));
+    if five_hour.is_none() && weekly.is_none() && monthly.is_none() {
         return Err(ProviderError::Parse(
             "Missing Alibaba Token Plan Personal usage windows".into(),
         ));
@@ -299,6 +347,8 @@ pub(super) fn parse_personal_usage(
         weekly_used_percent: weekly,
         weekly_total_quota: quota.map(|q| q.1).unwrap_or(None),
         weekly_resets_at: date_field(&usage, "per1WeekResetTime"),
+        monthly_used_percent: monthly,
+        monthly_resets_at: date_field(&usage, "per1MonthResetTime"),
     })
 }
 
@@ -580,5 +630,93 @@ mod tests {
         assert_eq!(usage_snap.primary.window_minutes, Some(10080));
         assert!(usage_snap.secondary.is_none());
         assert_eq!(usage_snap.login_method.as_deref(), Some("Personal"));
+    }
+
+    #[test]
+    fn monthly_only_personal_payload_promotes_monthly_window() {
+        // Captured from the live intl-personal Standard subscription: the gateway
+        // answers SUCCESS with a monthly lane only, no 5-hour or weekly keys.
+        let usage = serde_json::json!({
+            "code": "200",
+            "data": {
+                "DataV2": {
+                    "ret": [],
+                    "data": {
+                        "msg": "Success.",
+                        "code": "SUCCESS",
+                        "data": {
+                            "per1MonthPercentage": 0.15672352377046667,
+                            "per1MonthResetTime": 1790697600000_i64
+                        },
+                        "requestId": "00000000-0000-0000-0000-000000000000",
+                        "success": true
+                    }
+                },
+                "success": true,
+                "httpStatus": 200,
+                "errorCode": "",
+                "api": "zeldaHttp.apikeyMgr./tokenplan/personal/api/v2/usage",
+                "errorMsg": ""
+            },
+            "httpStatusCode": "200",
+            "requestId": "00000000-0000-0000-0000-000000000000",
+            "successResponse": true
+        });
+
+        // A monthly lane is a real window: it must not be retried as transient.
+        assert!(!personal_usage_success_without_windows(
+            usage.to_string().as_bytes()
+        ));
+
+        let snapshot = parse_personal_usage(usage.to_string().as_bytes(), None, None).unwrap();
+        assert!(snapshot.five_hour_used_percent.is_none());
+        assert!(snapshot.weekly_used_percent.is_none());
+        assert!((snapshot.monthly_used_percent.unwrap() - 15.672352377046667).abs() < 1e-9);
+        assert!(snapshot.monthly_resets_at.is_some());
+
+        let usage_snap: UsageSnapshot =
+            AlibabaTokenPlanProvider::snapshot_to_usage(snapshot).unwrap();
+        assert!((usage_snap.primary.used_percent - 15.672352377046667).abs() < 1e-9);
+        // 2026-09-29T16:00Z minus one calendar month is 31 days.
+        assert_eq!(usage_snap.primary.window_minutes, Some(31 * 24 * 60));
+        assert!(usage_snap.secondary.is_none());
+        assert!(usage_snap.tertiary.is_none());
+    }
+
+    #[test]
+    fn personal_payload_with_all_three_lanes_fills_tertiary() {
+        let usage = serde_json::json!({
+            "code": "200",
+            "successResponse": true,
+            "data": {
+                "success": true,
+                "httpStatus": 200,
+                "errorCode": "",
+                "DataV2": {
+                    "data": {
+                        "success": true,
+                        "data": {
+                            "per5HourPercentage": 0.1,
+                            "per1WeekPercentage": 0.2,
+                            "per1MonthPercentage": 0.3,
+                            "per1MonthResetTime": 1790697600000_i64
+                        }
+                    }
+                }
+            }
+        });
+
+        let snapshot = parse_personal_usage(usage.to_string().as_bytes(), None, None).unwrap();
+        let usage_snap: UsageSnapshot =
+            AlibabaTokenPlanProvider::snapshot_to_usage(snapshot).unwrap();
+        assert_eq!(usage_snap.primary.window_minutes, Some(300));
+        assert_eq!(
+            usage_snap.secondary.as_ref().and_then(|w| w.window_minutes),
+            Some(10080)
+        );
+        assert_eq!(
+            usage_snap.tertiary.as_ref().and_then(|w| w.window_minutes),
+            Some(31 * 24 * 60)
+        );
     }
 }

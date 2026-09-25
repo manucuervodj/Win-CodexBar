@@ -146,6 +146,8 @@ pub(super) fn parse_cli_usage(text: &str) -> Result<TokenPlanSnapshot, ProviderE
         weekly_used_percent: weekly_ratio.map(|ratio| ratio * 100.0),
         weekly_total_quota: None,
         weekly_resets_at: weekly_ratio.and_then(|_| reset_date(object.get("per1WeekResetTime"))),
+        monthly_used_percent: None,
+        monthly_resets_at: None,
     })
 }
 
