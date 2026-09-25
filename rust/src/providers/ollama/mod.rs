@@ -26,8 +26,12 @@ const OLLAMA_VALIDATION_URL: &str = "https://ollama.com/api/web_search";
 const OLLAMA_MONTHLY_WINDOW_MINUTES: u32 = 30 * 24 * 60;
 const OLLAMA_MONTHLY_USAGE_LABEL: &str = "Monthly usage";
 
-/// Ollama provider
+/// Ollama provider. A single implementation serves every Ollama account slot;
+/// the `ProviderId` it is built with selects the metadata and the
+/// account-scoped stores (manual cookie, API key, provider config,
+/// validated-cookie cache).
 pub struct OllamaProvider {
+    id: ProviderId,
     metadata: ProviderMetadata,
 }
 
@@ -40,11 +44,20 @@ struct UsageBlock {
 }
 
 impl OllamaProvider {
+    /// Original Ollama account slot.
     pub fn new() -> Self {
+        Self::with_id(ProviderId::Ollama)
+    }
+
+    /// Build the provider for an explicit account slot. Every account-dependent
+    /// store is keyed by the provider id, so the Ollama slots keep independent
+    /// sessions and never overwrite each other.
+    pub fn with_id(id: ProviderId) -> Self {
         Self {
+            id,
             metadata: ProviderMetadata {
-                id: ProviderId::Ollama,
-                display_name: "Ollama",
+                id,
+                display_name: id.display_name(),
                 session_label: "Session",
                 weekly_label: "Weekly",
                 supports_opus: false,
@@ -60,7 +73,7 @@ impl OllamaProvider {
 
     /// Fetch usage by scraping ollama.com/settings
     async fn fetch_usage_web(&self, ctx: &FetchContext) -> Result<UsageSnapshot, ProviderError> {
-        let cookies = resolve_cookie_source(ctx)?;
+        let cookies = resolve_cookie_source(ctx, self.id)?;
 
         let client = crate::core::credentialed_http_client_builder()
             .timeout(std::time::Duration::from_secs(ctx.web_timeout))
@@ -74,18 +87,18 @@ impl OllamaProvider {
             Ok(html) => {
                 // Only cache non-manual browser/validated sessions for reuse.
                 if ctx.manual_cookie_header.is_none() {
-                    cache_validated_session_cookie(&cookies);
+                    cache_validated_session_cookie(&cookies, self.id);
                 }
                 self.parse_usage_html(&html)
             }
             Err(ProviderError::AuthRequired) if ctx.manual_cookie_header.is_none() => {
                 // Cached/imported session expired — clear and re-import once.
-                invalidate_cached_session_cookie();
-                let fresh = resolve_browser_cookie_header(true)?
+                invalidate_cached_session_cookie(self.id);
+                let fresh = resolve_browser_cookie_header(true, self.id)?
                     .map(OllamaCookieSource::Manual)
                     .ok_or(ProviderError::AuthRequired)?;
                 let html = fetch_settings_html_at(&client, &fresh, start_url).await?;
-                cache_validated_session_cookie(&fresh);
+                cache_validated_session_cookie(&fresh, self.id);
                 self.parse_usage_html(&html)
             }
             Err(err) => Err(err),
@@ -369,7 +382,7 @@ impl Default for OllamaProvider {
 #[async_trait]
 impl Provider for OllamaProvider {
     fn id(&self) -> ProviderId {
-        ProviderId::Ollama
+        self.id
     }
 
     fn metadata(&self) -> &ProviderMetadata {
@@ -572,6 +585,24 @@ fn ollama_api_key_error() -> ProviderError {
 mod tests {
     use super::*;
     use crate::core::LastGoodFailurePolicy;
+
+    #[test]
+    fn second_account_slot_keeps_its_own_identity() {
+        let first = OllamaProvider::new();
+        let second = OllamaProvider::with_id(ProviderId::Ollama2);
+
+        assert_eq!(first.id(), ProviderId::Ollama);
+        assert_eq!(second.id(), ProviderId::Ollama2);
+        assert_eq!(first.metadata().display_name, "Ollama");
+        assert_eq!(second.metadata().display_name, "Ollama 2");
+
+        // Account-scoped stores (manual cookie, API key, provider config and the
+        // validated-cookie cache) key on ProviderId/cli_name, so the two Ollama
+        // slots must never share a key.
+        assert_eq!(ProviderId::Ollama.cli_name(), "ollama");
+        assert_eq!(ProviderId::Ollama2.cli_name(), "ollama2");
+        assert_ne!(first.id().cli_name(), second.id().cli_name());
+    }
 
     #[tokio::test]
     async fn settings_fetch_follows_same_origin_redirects() {

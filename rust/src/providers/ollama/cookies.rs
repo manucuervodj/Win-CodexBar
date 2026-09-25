@@ -85,8 +85,12 @@ pub(super) fn normalize_cookie_header(input: &str) -> Option<String> {
 ///
 /// Upstream #2404: reuse the last validated browser session cookie header
 /// across refreshes until auth fails, then re-import.
+///
+/// `id` selects the account slot: the validated-cookie cache is stored per
+/// provider id, so two Ollama account slots never share a session.
 pub(super) fn resolve_cookie_source(
     ctx: &FetchContext,
+    id: ProviderId,
 ) -> Result<OllamaCookieSource, ProviderError> {
     // Check manual cookie header first
     if let Some(cookie) = &ctx.manual_cookie_header
@@ -97,14 +101,14 @@ pub(super) fn resolve_cookie_source(
             .ok_or(ProviderError::NoCookies);
     }
 
-    match resolve_browser_cookie_header(false)? {
+    match resolve_browser_cookie_header(false, id)? {
         Some(header) => Ok(OllamaCookieSource::Manual(header)),
         None => Err(ProviderError::NoCookies),
     }
 }
 
 /// After a successful web fetch, cache the validated browser/manual session header.
-pub(super) fn cache_validated_session_cookie(source: &OllamaCookieSource) {
+pub(super) fn cache_validated_session_cookie(source: &OllamaCookieSource, id: ProviderId) {
     use crate::browser::cookie_cache::CookieHeaderCache;
     if let Some(header) =
         source.header_for_url(&Url::parse("https://ollama.com/settings").expect("static url"))
@@ -114,14 +118,14 @@ pub(super) fn cache_validated_session_cookie(source: &OllamaCookieSource) {
             OllamaCookieSource::Browser(_) => "browser",
         };
         // Cache store is best-effort: a failed write just means the next fetch re-validates.
-        let _stored = CookieHeaderCache::store(ProviderId::Ollama, &header, label);
+        let _stored = CookieHeaderCache::store(id, &header, label);
     }
 }
 
 /// Clear cached session after auth failure so the next refresh re-imports.
-pub(super) fn invalidate_cached_session_cookie() {
+pub(super) fn invalidate_cached_session_cookie(id: ProviderId) {
     use crate::browser::cookie_cache::CookieHeaderCache;
-    CookieHeaderCache::clear(ProviderId::Ollama);
+    CookieHeaderCache::clear(id);
 }
 
 /// Strip copied cURL cookie syntax (`-b …`, `--cookie …`, `-H …`) and the
@@ -143,11 +147,12 @@ pub(super) fn strip_curl_cookie_wrapper(raw: &str) -> &str {
 /// (upstream #2404). On force or cache miss, imports from the browser.
 pub(super) fn resolve_browser_cookie_header(
     force_reimport: bool,
+    id: ProviderId,
 ) -> Result<Option<String>, ProviderError> {
     use crate::browser::cookie_cache::CookieHeaderCache;
 
     if !force_reimport
-        && let Some(cached) = CookieHeaderCache::load(ProviderId::Ollama)
+        && let Some(cached) = CookieHeaderCache::load(id)
         && has_recognized_ollama_session_cookie(&cached.cookie_header)
     {
         return Ok(Some(cached.cookie_header));

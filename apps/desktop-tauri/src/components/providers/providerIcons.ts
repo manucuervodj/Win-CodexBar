@@ -202,6 +202,9 @@ export const PROVIDER_ICON_REGISTRY: Record<string, ProviderIcon> = {
   mistral:     { id: "mistral",     brandColor: "#ff500f", fallbackLetter: "M", svgPath: RAW.mistral },
   muse:        { id: "muse",        brandColor: "#0668e1", fallbackLetter: "M", svgPath: RAW.muse },
   ollama:      { id: "ollama",      brandColor: "#8b95b0", fallbackLetter: "○", svgPath: RAW.ollama },
+  // Second Ollama account slot: same brand glyph, distinct tint so the tray
+  // provider strip tells the two accounts apart.
+  ollama2:     { id: "ollama2",     brandColor: "#2fb39b", fallbackLetter: "2", svgPath: RAW.ollama },
   azureopenai: { id: "azureopenai", brandColor: "#0078d4", fallbackLetter: "A" },
   t3chat:      { id: "t3chat",      brandColor: "#8b5cf6", fallbackLetter: "T", svgPath: RAW.t3chat },
   opencode:    { id: "opencode",    brandColor: "#3b82f6", fallbackLetter: "○", svgPath: RAW.opencode },

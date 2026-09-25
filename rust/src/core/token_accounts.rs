@@ -133,6 +133,14 @@ impl TokenAccountSupport {
                 requires_manual_cookie_source: true,
                 cookie_name: Some("__Secure-session"),
             }),
+            ProviderId::Ollama2 => Some(TokenAccountSupport {
+                title: "Session tokens",
+                subtitle: "Store multiple Ollama Cookie headers or __Secure-session values.",
+                placeholder: "__Secure-session value or Cookie: ...",
+                injection: TokenInjection::CookieHeader,
+                requires_manual_cookie_source: true,
+                cookie_name: Some("__Secure-session"),
+            }),
             ProviderId::T3Chat => Some(TokenAccountSupport {
                 title: "Session tokens",
                 subtitle: "Store multiple T3 Chat Cookie headers or full browser cURL captures.",

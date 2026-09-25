@@ -50,6 +50,9 @@ pub fn instantiate(id: ProviderId) -> Box<dyn Provider> {
         ProviderId::Amp => Box::new(AmpProvider::new()),
         ProviderId::Warp => Box::new(WarpProvider::new()),
         ProviderId::Ollama => Box::new(OllamaProvider::new()),
+        // Second Ollama account slot: same implementation, its own provider id so
+        // cookies, API key and validated-cookie cache stay isolated.
+        ProviderId::Ollama2 => Box::new(OllamaProvider::with_id(ProviderId::Ollama2)),
         ProviderId::AzureOpenAI => Box::new(AzureOpenAIProvider::new()),
         ProviderId::T3Chat => Box::new(T3ChatProvider::new()),
         ProviderId::OpenRouter => Box::new(OpenRouterProvider::new()),

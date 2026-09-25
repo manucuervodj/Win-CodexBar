@@ -215,6 +215,7 @@ function providerSourceHintShort(
     case "opencode":
     case "amp":
     case "ollama":
+    case "ollama2":
     case "alibaba":
     case "infini":
     case "manus":

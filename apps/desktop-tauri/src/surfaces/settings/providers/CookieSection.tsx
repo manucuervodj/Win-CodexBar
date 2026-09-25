@@ -22,7 +22,7 @@ function cookiePlaceholder(
   providerId: string,
   t: ReturnType<typeof useLocale>["t"],
 ): string {
-  if (providerId === "ollama") {
+  if (providerId === "ollama" || providerId === "ollama2") {
     return t("BrowserCookiePlaceholderOllama");
   }
   if (providerId === "t3chat") {

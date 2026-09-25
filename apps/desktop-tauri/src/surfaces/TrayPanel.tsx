@@ -33,7 +33,7 @@ const HAS_DASHBOARD = new Set([
   "aiand", "commandcode", "copilot", "crof", "crossmodel", "cursor", "deepgram", "deepinfra", "deepseek", "zenmux", "clinepass", "longcat", "neuralwatt", "zoommate",
   "doubao", "elevenlabs", "factory", "gemini", "grok", "groq",
   "infini", "jetbrains", "kilo", "kimi", "kimik2", "kiro", "manus", "replicate",
-  "mimo", "minimax", "mistral", "nanogpt", "notion", "ollama", "openaiapi",
+  "mimo", "minimax", "mistral", "nanogpt", "notion", "ollama", "ollama2", "openaiapi",
   "opencode", "opencodego", "openrouter", "perplexity", "qoder", "codebuddy", "sakana", "stepfun",
   "t3chat", "venice", "vertexai", "warp", "windsurf",
   "xai", "zai", "fireworks", "meta", "muse", "nous",

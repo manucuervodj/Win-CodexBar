@@ -17,7 +17,7 @@ Win-CodexBar is a Windows system-tray app for keeping AI coding-tool usage visib
 
 ## Highlights
 
-- **56 providers** including Codex, Claude, Copilot, OpenRouter, Cursor, Gemini, DeepSeek, MiniMax, Kiro, Antigravity, Groq, Qoder, Sakana AI, CrossModel, and more.
+- **57 providers** including Codex, Claude, Copilot, OpenRouter, Cursor, Gemini, DeepSeek, MiniMax, Kiro, Antigravity, Groq, Qoder, Sakana AI, CrossModel, and more.
 - **Tray-first workflow** with a compact provider grid, usage cards, refresh action, settings shortcut, and quit control.
 - **Provider settings** for source selection, credentials, cookie import, token accounts, API keys, regions, and tray-display preferences.
 - **Windows credential protection** for app-managed API keys, manual cookies, and token accounts, using user-scoped DPAPI where available.
@@ -88,6 +88,7 @@ See the full history in [CHANGELOG.md](CHANGELOG.md).
 | Amp | Cookies | Usage |
 | Warp | Local Config | Usage |
 | Ollama | Cookies / API Key | Usage, Cloud Models, Pace windows |
+| Ollama 2 | Cookies / API Key | Usage, Cloud Models, Pace windows |
 | Azure OpenAI | API Key | Deployment |
 | T3 Chat | Cookies / cURL | Base, Overage |
 | TypeSafe | Browser cookies / manual Cookie header | Billing-cycle spend, balance, expiring credits |

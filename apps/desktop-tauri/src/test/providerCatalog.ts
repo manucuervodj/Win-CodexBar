@@ -18,6 +18,7 @@ export const TEST_PROVIDER_CATALOG: Array<[string, string]> = [
   ["amp", "Amp"],
   ["warp", "Warp"],
   ["ollama", "Ollama"],
+  ["ollama2", "Ollama 2"],
   ["azureopenai", "Azure OpenAI"],
   ["t3chat", "T3 Chat"],
   ["openrouter", "OpenRouter"],

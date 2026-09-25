@@ -31,6 +31,7 @@ pub enum ProviderId {
     Amp,
     Warp,
     Ollama,
+    Ollama2,
     AzureOpenAI,
     T3Chat,
     OpenRouter,
@@ -118,6 +119,7 @@ impl ProviderId {
             ProviderId::Amp,
             ProviderId::Warp,
             ProviderId::Ollama,
+            ProviderId::Ollama2,
             ProviderId::AzureOpenAI,
             ProviderId::T3Chat,
             ProviderId::OpenRouter,
@@ -204,6 +206,7 @@ impl ProviderId {
             ProviderId::Amp => "amp",
             ProviderId::Warp => "warp",
             ProviderId::Ollama => "ollama",
+            ProviderId::Ollama2 => "ollama2",
             ProviderId::AzureOpenAI => "azureopenai",
             ProviderId::T3Chat => "t3chat",
             ProviderId::OpenRouter => "openrouter",
@@ -291,6 +294,7 @@ impl ProviderId {
             ProviderId::Amp => "Amp",
             ProviderId::Warp => "Warp",
             ProviderId::Ollama => "Ollama",
+            ProviderId::Ollama2 => "Ollama 2",
             ProviderId::AzureOpenAI => "Azure OpenAI",
             ProviderId::T3Chat => "T3 Chat",
             ProviderId::OpenRouter => "OpenRouter",
@@ -380,6 +384,7 @@ impl ProviderId {
             }
             ProviderId::AlibabaTokenPlan => Some("bailian.console.aliyun.com"),
             ProviderId::Ollama => Some("ollama.com"),
+            ProviderId::Ollama2 => Some("ollama.com"),
             ProviderId::T3Chat => Some("t3.chat"),
             ProviderId::Perplexity => Some("perplexity.ai"),
             ProviderId::Abacus => Some("apps.abacus.ai"),
@@ -471,6 +476,7 @@ impl ProviderId {
             "amp" | "sourcegraph" => Some(ProviderId::Amp),
             "warp" | "warp-ai" | "warp-terminal" => Some(ProviderId::Warp),
             "ollama" => Some(ProviderId::Ollama),
+            "ollama2" | "ollama-2" | "ollama 2" => Some(ProviderId::Ollama2),
             "azureopenai" | "azure-openai" | "azure openai" => Some(ProviderId::AzureOpenAI),
             "t3chat" | "t3-chat" | "t3 chat" => Some(ProviderId::T3Chat),
             "openrouter" | "or" => Some(ProviderId::OpenRouter),
@@ -1045,6 +1051,7 @@ pub fn brand_color(id: ProviderId) -> &'static str {
         ProviderId::Amp => "#DC2626",
         ProviderId::Warp => "#6366F1",
         ProviderId::Ollama => "#8B95B0",
+        ProviderId::Ollama2 => "#2FB39B",
         ProviderId::AzureOpenAI => "#0078D4",
         ProviderId::T3Chat => "#8B5CF6",
         ProviderId::OpenRouter => "#6B7280",
@@ -1120,7 +1127,9 @@ mod tests {
     #[test]
     fn test_provider_id_all() {
         let all = ProviderId::all();
-        assert_eq!(all.len(), 80);
+        assert_eq!(all.len(), 81);
+        assert!(all.contains(&ProviderId::Ollama));
+        assert!(all.contains(&ProviderId::Ollama2));
         assert!(all.contains(&ProviderId::Claude));
         assert!(all.contains(&ProviderId::Codex));
         assert!(all.contains(&ProviderId::Pi));
@@ -1501,6 +1510,34 @@ mod tests {
         assert_eq!(
             ProviderId::from_cli_name("supergrok"),
             Some(ProviderId::Grok)
+        );
+    }
+
+    #[test]
+    fn test_provider_id_ollama_second_slot() {
+        assert_eq!(ProviderId::Ollama2.cli_name(), "ollama2");
+        assert_eq!(ProviderId::Ollama2.display_name(), "Ollama 2");
+        assert_eq!(ProviderId::Ollama2.cookie_domain(), Some("ollama.com"));
+        assert_eq!(
+            ProviderId::from_cli_name("ollama2"),
+            Some(ProviderId::Ollama2)
+        );
+        assert_eq!(
+            ProviderId::from_cli_name("ollama-2"),
+            Some(ProviderId::Ollama2)
+        );
+        assert_eq!(
+            ProviderId::from_cli_name("Ollama 2"),
+            Some(ProviderId::Ollama2)
+        );
+        // The first slot keeps its own identity and aliases.
+        assert_eq!(
+            ProviderId::from_cli_name("ollama"),
+            Some(ProviderId::Ollama)
+        );
+        assert_ne!(
+            ProviderId::Ollama.cli_name(),
+            ProviderId::Ollama2.cli_name()
         );
     }
 }
