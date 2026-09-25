@@ -67,7 +67,7 @@ pub(super) async fn fetch_personal_usage(
             quota_config_body.as_deref(),
         ) {
             Ok(snapshot) => return Ok(snapshot),
-            Err(error) if personal_usage_success_without_windows(&usage_body) => {
+            Err(error) if personal_usage_retry_is_transient(&error, &usage_body) => {
                 tracing::debug!(
                     usage_keys = %response_key_summary(&usage_body),
                     "Alibaba Token Plan Personal usage response shape"
@@ -89,6 +89,18 @@ pub(super) async fn fetch_personal_usage(
         }
     }
     unreachable!("bounded usage retry loop always returns")
+}
+
+/// Whether a failed Personal usage parse is worth another attempt.
+///
+/// A SUCCESS envelope that carries no usage window can be a transient gateway
+/// hiccup, so it is retried. A terminal failure must not be swallowed by that
+/// retry: an expired or unauthorised session also arrives as a SUCCESS shell,
+/// with the nested frame reporting `BailianGateway.Login.NotLogined`, and
+/// retrying it three times replaced "sign in required" with a misleading
+/// "temporarily unavailable" card.
+fn personal_usage_retry_is_transient(error: &ProviderError, data: &[u8]) -> bool {
+    matches!(error, ProviderError::Parse(_)) && personal_usage_success_without_windows(data)
 }
 
 fn personal_usage_success_without_windows(data: &[u8]) -> bool {
@@ -718,5 +730,34 @@ mod tests {
             usage_snap.tertiary.as_ref().and_then(|w| w.window_minutes),
             Some(31 * 24 * 60)
         );
+    }
+
+    #[test]
+    fn nested_login_failure_is_not_retried_as_an_empty_window() {
+        // Captured from the live gateway with a stale console session: HTTP 200,
+        // successResponse true, and no usage payload at all.
+        let payload = serde_json::json!({
+            "code": "200",
+            "data": {
+                "success": false,
+                "httpStatus": 200,
+                "errorCode": "BailianGateway.Login.NotLogined",
+                "api": "zeldaHttp.apikeyMgr./tokenplan/personal/api/v2/usage",
+                "errorMsg": "BailianGateway.Login.NotLogined"
+            },
+            "httpStatusCode": "200",
+            "requestId": "00000000-0000-0000-0000-000000000000",
+            "successResponse": true
+        });
+        let bytes = payload.to_string();
+
+        let error = parse_personal_usage(bytes.as_bytes(), None, None).unwrap_err();
+        assert!(matches!(error, ProviderError::AuthRequired));
+
+        // The envelope alone still looks like an empty-but-successful response.
+        assert!(personal_usage_success_without_windows(bytes.as_bytes()));
+        // The terminal auth failure must win: no retry, so the UI can say
+        // "sign in required" instead of "temporarily unavailable".
+        assert!(!personal_usage_retry_is_transient(&error, bytes.as_bytes()));
     }
 }
