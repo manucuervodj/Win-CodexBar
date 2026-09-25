@@ -4,6 +4,7 @@ import type {
   CodexAccount,
   CodexAccountsStateBridge,
   CodexAccountUsageSnapshot,
+  CodexUsageWindow,
 } from "../types/bridge";
 import { useLocale } from "../hooks/useLocale";
 import { useFormattedResetTime } from "../hooks/useFormattedResetTime";
@@ -154,23 +155,21 @@ function CodexAccountRow({
   onSwitch: (id: string) => Promise<void>;
 }) {
   const { t } = useLocale();
-  // Prefer the primary (normally five-hour) window. Accounts whose backend
-  // only returns a weekly window have primaryWindow: null, so keep the
-  // existing secondary-window fallback for their bar and reset detail.
-  const usageWindow =
-    snapshot?.primaryWindow ?? snapshot?.secondaryWindow ?? null;
-  const pct = usageWindow ? Math.round(usageWindow.usedPercent) : null;
-  const resetText = useFormattedResetTime(
-    usageWindow?.resetAt ?? null,
-    null,
-    resetTimeRelative,
-  );
-  const resetLabel = resetText
-    ? resetTimeRelative
-      ? resetText
-      : `${t("MetricResetsIn")} ${resetText}`
-    : null;
-  const windowLabel = formatWindowLabel(usageWindow?.limitWindowSeconds);
+  // Every Codex account reports both lanes: the five-hour session and the
+  // weekly window. Render each lane the account actually has — weekly-only
+  // plans arrive as `secondaryWindow` with `primaryWindow: null`, so the
+  // fallback single-lane case keeps working.
+  const usageWindows = [
+    snapshot?.primaryWindow ?? null,
+    snapshot?.secondaryWindow ?? null,
+  ]
+    .filter((window): window is CodexUsageWindow => window !== null)
+    .filter(
+      (window, index, all) =>
+        all.findIndex(
+          (other) => other.limitWindowSeconds === window.limitWindowSeconds,
+        ) === index,
+    );
   const isAmbient = account.source === "ambient";
 
   return (
@@ -187,23 +186,13 @@ function CodexAccountRow({
               </span>
             )}
           </span>
-          {(pct !== null || resetLabel) && (
-            <span className="codex-menu-accounts__usage">
-              {windowLabel && <span>{windowLabel}</span>}
-              {pct !== null && (
-                <span>{pct}% {t("PanelUsedSuffix")}</span>
-              )}
-              {resetLabel && <span>{resetLabel}</span>}
-            </span>
-          )}
-          {pct !== null && (
-            <span className="codex-menu-accounts__bar" aria-hidden>
-              <span
-                className="codex-menu-accounts__bar-fill"
-                style={{ width: `${Math.max(2, Math.min(100, pct))}%` }}
-              />
-            </span>
-          )}
+          {usageWindows.map((window) => (
+            <CodexAccountUsageWindow
+              key={window.limitWindowSeconds}
+              window={window}
+              resetTimeRelative={resetTimeRelative}
+            />
+          ))}
         </div>
         <button
           type="button"
@@ -215,6 +204,51 @@ function CodexAccountRow({
         </button>
       </div>
     </li>
+  );
+}
+
+/**
+ * One usage lane of an account row: window label, used percent, reset time and
+ * a matching bar. Extracted so the row can render the five-hour and the weekly
+ * lane as independent rows (each lane needs its own reset-time hook).
+ */
+function CodexAccountUsageWindow({
+  window,
+  resetTimeRelative,
+}: {
+  window: CodexUsageWindow;
+  resetTimeRelative: boolean;
+}) {
+  const { t } = useLocale();
+  const pct = Math.round(window.usedPercent);
+  const resetText = useFormattedResetTime(
+    window.resetAt,
+    null,
+    resetTimeRelative,
+  );
+  const resetLabel = resetText
+    ? resetTimeRelative
+      ? resetText
+      : `${t("MetricResetsIn")} ${resetText}`
+    : null;
+  const windowLabel = formatWindowLabel(window.limitWindowSeconds);
+
+  return (
+    <>
+      <span className="codex-menu-accounts__usage">
+        {windowLabel && <span>{windowLabel}</span>}
+        <span>
+          {pct}% {t("PanelUsedSuffix")}
+        </span>
+        {resetLabel && <span>{resetLabel}</span>}
+      </span>
+      <span className="codex-menu-accounts__bar" aria-hidden>
+        <span
+          className="codex-menu-accounts__bar-fill"
+          style={{ width: `${Math.max(2, Math.min(100, pct))}%` }}
+        />
+      </span>
+    </>
   );
 }
 

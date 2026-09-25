@@ -179,6 +179,55 @@ describe("CodexAccountsMenu", () => {
     expect(screen.getAllByText(`MetricResetsIn ${expectedReset}`)).toHaveLength(2);
   });
 
+  it("shows the weekly lane next to the five-hour lane for each account", async () => {
+    const bothLanes: CodexAccountUsageSnapshot = {
+      ...snapshot(30, "2030-01-02T03:04:00Z"),
+      secondaryWindow: {
+        usedPercent: 42,
+        resetAt: "2030-01-05T03:04:00Z",
+        limitWindowSeconds: 604800,
+      },
+    };
+
+    const { container } = renderMenu(false, {
+      accounts: [account("1", { source: "ambient" }), account("2")],
+      accountOrdinals: { "1": 1, "2": 2 },
+      snapshots: { "1": bothLanes, "2": bothLanes },
+    });
+
+    await screen.findByText("user-1@example.com");
+    // Each account renders both lanes: label, used percent and a matching bar.
+    expect(screen.getAllByText("5h")).toHaveLength(2);
+    expect(screen.getAllByText("7d")).toHaveLength(2);
+    expect(screen.getAllByText("30% PanelUsedSuffix")).toHaveLength(2);
+    expect(screen.getAllByText("42% PanelUsedSuffix")).toHaveLength(2);
+    const fills = container.querySelectorAll(".codex-menu-accounts__bar-fill");
+    expect(fills.length).toBe(4);
+    expect((fills[0] as HTMLElement).style.width).toBe("30%");
+    expect((fills[1] as HTMLElement).style.width).toBe("42%");
+  });
+
+  it("does not repeat a lane reported in both window slots", async () => {
+    const duplicated: CodexAccountUsageSnapshot = {
+      ...snapshot(30),
+      secondaryWindow: {
+        usedPercent: 30,
+        resetAt: null,
+        limitWindowSeconds: 18_000,
+      },
+    };
+
+    const { container } = renderMenu(false, {
+      accounts: [account("1", { source: "ambient" }), account("2")],
+      accountOrdinals: { "1": 1, "2": 2 },
+      snapshots: { "1": duplicated, "2": snapshot(30) },
+    });
+
+    await screen.findByText("user-1@example.com");
+    expect(screen.getAllByText("5h")).toHaveLength(2);
+    expect(container.querySelectorAll(".codex-menu-accounts__bar-fill").length).toBe(2);
+  });
+
   it("switches an account and kicks a provider refresh", async () => {
     renderMenu(false, {
       accounts: [account("1", { source: "ambient" }), account("2")],
